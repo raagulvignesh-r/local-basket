@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.auth.dependencies import get_current_user, require_store_product_access
 from app.database.session import get_db
 from app.inventory.models import Inventory
 from app.inventory.schemas import InventoryOut, InventoryUpdate, ReserveRequest
+from app.inventory.service import reserve_quantity
 from app.users.models import User
 
 
@@ -67,16 +68,8 @@ def reserve_inventory(
             detail="Inventory not found",
         )
 
-    result = db.execute(
-        update(Inventory)
-        .where(Inventory.store_product_id == store_product_id)
-        .where(
-            (Inventory.quantity_on_hand - Inventory.quantity_reserved)
-            >= payload.requested_qty
-        )
-        .values(quantity_reserved=Inventory.quantity_reserved + payload.requested_qty)
-    )
-    if result.rowcount == 0:
+    inventory = reserve_quantity(db, store_product_id, payload.requested_qty)
+    if inventory is None:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
